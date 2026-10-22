@@ -1,8 +1,8 @@
 {
   "name": "staruml-mcp-server",
-  "version": "0.1.0",
+  "version": "0.1.0-v4compat.1",
   "type": "module",
-  "description": "",
+  "description": "StarUML MCP server with a compatibility bridge for StarUML 4.x",
   "bin": {
     "staruml-mcp-server": "build/index.js"
   },
@@ -28,7 +28,7 @@
   },
   "homepage": "https://github.com/staruml/staruml-mcp-server#readme",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "node-fetch": "^3.3.2",
     "zod": "^3.22.4"
   },

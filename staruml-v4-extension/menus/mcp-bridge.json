@@ -1,0 +1,43 @@
+{
+  "menu": [
+    {
+      "id": "tools",
+      "submenu": [
+        {
+          "label": "StarUML MCP Bridge",
+          "submenu": [
+            {
+              "label": "Start Server",
+              "id": "mcp-bridge-v4.start",
+              "command": "mcp-bridge-v4:start"
+            },
+            {
+              "label": "Stop Server",
+              "id": "mcp-bridge-v4.stop",
+              "command": "mcp-bridge-v4:stop"
+            },
+            {
+              "label": "Show Status",
+              "id": "mcp-bridge-v4.status",
+              "command": "mcp-bridge-v4:status"
+            },
+            {
+              "label": "GitHub",
+              "id": "mcp-github"
+            },
+            {
+              "label": "Safety",
+              "submenu" : [
+                {
+                  "label" : "Toggle universal edit",
+                  "id" : "mcp-toggle-edit",
+                  "command" : "mcp-toggle-edit"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

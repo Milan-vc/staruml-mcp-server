@@ -6,10 +6,29 @@
 
 ## Setup
 
-Prerequisite:
+Prerequisite for the upstream StarUML API:
 
 - [StarUML](https://staruml.io/) `v7.0.0` or higher
 - [Node.js](https://nodejs.org/) `v22` or higher
+
+### StarUML 4 compatibility
+
+This fork includes `staruml-v4-extension`, a local HTTP bridge for StarUML
+4.x. Copy that folder to the StarUML user extensions directory and restart
+StarUML:
+
+```text
+%APPDATA%\StarUML\extensions\user\staruml-mcp-bridge-v4
+```
+
+The bridge starts automatically on `127.0.0.1:58321`. It implements all four
+MCP endpoints. Diagram listing, current-diagram inspection, and PNG retrieval
+work with existing StarUML 4 diagrams. Diagram generation supports Mermaid
+`classDiagram`; the other Mermaid diagram types remain available only with
+StarUML 7's built-in API.
+
+The bridge can also be started, stopped, or inspected under
+**Tools > StarUML MCP Bridge**.
 
 Set up `claude_desktop_config.json` in Claude Desktop as follows:
 

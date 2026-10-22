@@ -31,14 +31,28 @@ const server = new McpServer({
     name: NAME,
     version: VERSION,
 });
-server.tool("generate_diagram", "Generate a diagram in StarUML.", {
+server.tool("generate_diagram", "Create a new diagram or replace an existing generated diagram.", {
     code: z
         .string()
-        .describe("Mermaid code to generate the diagram. Supported diagrams are classDiagram, sequenceDiagram, flowchart, erDiagram, mindmap, requirementDiagram and stateDiagram. Other diagrams are not supported."),
-}, async ({ code }) => {
+        .describe("Mermaid code used to generate the diagram."),
+    diagramId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Existing diagram ID to replace. Omit this to create a new diagram."),
+    replace: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("Must be true when diagramId is provided, to confirm replacement."),
+}, async ({ code, diagramId, replace }) => {
     try {
-        await api(apiPort, "/generate_diagram", { code });
-        return response.text("Diagram is successfully generated.");
+        const result = await api(apiPort, "/generate_diagram", {
+            code,
+            diagramId,
+            replace,
+        });
+        return response.text(`Diagram generated: ${JSON.stringify(result)}`);
     }
     catch (error) {
         console.error(error);
@@ -76,10 +90,21 @@ server.tool("get_diagram_image_by_id", "Get the image of a diagram by its ID in 
         .describe("ID of the diagram to get the image for. You can get the ID from the 'get_all_diagrams_info' tool."),
 }, async ({ diagramId }) => {
     try {
-        const image = await api(apiPort, "/get_diagram_image_by_id", {
+        const image = (await api(apiPort, "/get_diagram_image_by_id", {
             diagramId,
-        });
-        return response.image("image/png", image);
+        }));
+        // The original StarUML API returns a bare PNG string. The StarUML 4
+        // compatibility bridge returns the data together with its MIME type.
+        if (typeof image === "string") {
+            return response.image("image/png", image);
+        }
+        if (!image || typeof image.data !== "string") {
+            throw new Error("StarUML returned an invalid diagram image payload");
+        }
+        if (image.mimeType !== "image/png" && image.mimeType !== "image/jpeg") {
+            throw new Error(`StarUML returned an unsupported image type: ${image.mimeType}`);
+        }
+        return response.image(image.mimeType, image.data);
     }
     catch (error) {
         console.error(error);
