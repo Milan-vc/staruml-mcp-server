@@ -9,6 +9,8 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "build": "tsc",
+    "types:staruml": "node scripts/generate-staruml-api-types.mjs",
+    "install:windows": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./install.ps1",
     "dev": "tsx watch src/index.ts",
     "inspect": "npx @modelcontextprotocol/inspector node build/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"

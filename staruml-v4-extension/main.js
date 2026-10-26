@@ -1,17 +1,73 @@
 /* global app, type */
-
 const path = require('path')
 const fs = require('fs')
 const childProcess = require('child_process')
+const {
+  moveViewTo,
+  findViewWorldwide
+} = require('./helpers')
+
+
 
 const HOST = '127.0.0.1'
 const DEFAULT_PORT = 58321
+const LINE_STYLES = {
+  rectilinear: 0,
+  oblique: 1,
+  roundrect: 2,
+  curve: 3,
+  direct: 4
+}
+
+const LAYOUT_DIRECTIONS = {
+  'top-to-bottom': 'TB',
+  'bottom-to-top': 'BT',
+  'left-to-right': 'LR',
+  'right-to-left': 'RL'
+}
 let server = null
 let currentPort = null
 let bridgeWebContents = null
 let previousBackgroundThrottling = null
 let powerSaveBlockerId = null
 let backgroundThrottlingDisabled = false
+
+function startRequestMailboxPolling (child) {
+  if (child.mcpRequestPollTimer || !child.mcpResponseDir) return
+
+  child.mcpRequestPollTimer = setInterval(function () {
+    if (server !== child || child.mcpStopping || !child.mcpResponseDir) return
+
+    let readyFiles
+    try {
+      readyFiles = fs.readdirSync(child.mcpResponseDir).filter(function (name) {
+        return name.endsWith('.request.ready')
+      })
+    } catch (error) {
+      return
+    }
+
+    readyFiles.forEach(function (readyName) {
+      const id = readyName.slice(0, -'.request.ready'.length)
+      const readyPath = path.join(child.mcpResponseDir, readyName)
+      const dataPath = path.join(child.mcpResponseDir, id + '.request.data')
+
+      try {
+        const message = JSON.parse(fs.readFileSync(dataPath, 'utf8'))
+        fs.unlinkSync(readyPath)
+        fs.unlinkSync(dataPath)
+        bridgeTrace(child, 'REQUEST_MAILBOX_RECEIVED', 'id=' + id)
+        child.emit('message', message)
+      } catch (error) {
+        bridgeTrace(
+          child,
+          'REQUEST_MAILBOX_READ_FAILED',
+          'id=' + id + ' error=' + (error.stack || error.message || error)
+        )
+      }
+    })
+  }, 25)
+}
 
 function bridgeTrace (child, event, details) {
   const line = new Date().toISOString() +
@@ -139,7 +195,33 @@ function viewSummary (view) {
   if (typeof view.top === 'number') result.top = view.top
   if (typeof view.width === 'number') result.width = view.width
   if (typeof view.height === 'number') result.height = view.height
+  if (typeof view.lineStyle === 'number') result.lineStyle = view.lineStyle
+  if (typeof view.lineColor === 'string') result.lineColor = view.lineColor
   return result
+}
+
+function lineStyleValue (name) {
+  const normalized = name || 'direct'
+  if (!Object.prototype.hasOwnProperty.call(LINE_STYLES, normalized)) {
+    throw new Error('Unsupported line style: ' + normalized)
+  }
+  return LINE_STYLES[normalized]
+}
+
+function layoutDirectionValue (name) {
+  const normalized = name || 'left-to-right'
+  if (!Object.prototype.hasOwnProperty.call(LAYOUT_DIRECTIONS, normalized)) {
+    throw new Error('Unsupported layout direction: ' + normalized)
+  }
+  return LAYOUT_DIRECTIONS[normalized]
+}
+
+function findRelationshipStyle (relation, styles) {
+  if (!Array.isArray(styles)) return null
+  return styles.find(function (style) {
+    if (style.name && style.name === relation.name) return true
+    return style.source === relation.left && style.target === relation.right
+  }) || null
 }
 
 function diagramSummary (diagram, includeViews) {
@@ -493,6 +575,7 @@ function createClassDiagram (code, options) {
   }
 
   const views = new Map()
+  const relationshipViews = []
 
   parsed.classes.forEach(function (definition, index) {
     const column = index % 4
@@ -563,7 +646,7 @@ function createClassDiagram (code, options) {
       relationType = 'UMLDependency'
     }
 
-    app.factory.createModelAndView({
+    const relationshipView = app.factory.createModelAndView({
       id: relationType,
       parent: model,
       diagram: diagram,
@@ -597,6 +680,11 @@ function createClassDiagram (code, options) {
         }
       }
     })
+
+    relationshipViews.push({
+      relation: relation,
+      view: relationshipView
+    })
   })
 
   app.diagrams.openDiagram(diagram)
@@ -605,16 +693,36 @@ function createClassDiagram (code, options) {
   editor.diagram = diagram
   editor.repaint()
 
+  const defaultLineStyle = lineStyleValue(options.lineStyle)
+  const layoutDirection = layoutDirectionValue(options.layoutDirection)
+
   app.engine.layoutDiagram(
     editor,
     diagram,
-    type.Diagram.LD_LR,
+    layoutDirection,
     {
-      node: 30,
-      edge: 20,
-      rank: 120
-    }
+      node: options.nodeSpacing || 30,
+      edge: options.edgeSpacing || 20,
+      rank: options.rankSpacing || 120
+    },
+    defaultLineStyle
   )
+
+  relationshipViews.forEach(function (entry) {
+    const override = findRelationshipStyle(
+      entry.relation,
+      options.relationshipStyles
+    )
+    const style = override && override.lineStyle
+      ? lineStyleValue(override.lineStyle)
+      : defaultLineStyle
+    const color = override && override.lineColor
+      ? override.lineColor
+      : options.lineColor
+
+    app.engine.setLineStyle(editor, [entry.view], style)
+    if (color) app.engine.setLineColor(editor, [entry.view], color)
+  })
 
   app.diagrams.repaint()
 
@@ -622,6 +730,23 @@ function createClassDiagram (code, options) {
   result.replaced = replaced
 
   return result
+}
+function validateCoordinate (value, name) {
+  if (typeof value !== 'number') {
+    throw new Error(name + ' must be a number.')
+  }
+
+  if (!Number.isFinite(value)) {
+    throw new Error(name + ' must be finite.')
+  }
+
+  if (value < -100000 || value > 100000) {
+    throw new Error(
+      name + ' must be between -100000 and 100000.'
+    )
+  }
+
+  return value
 }
 
 function route (requestPath, body) {
@@ -649,8 +774,43 @@ function route (requestPath, body) {
   if (requestPath === '/generate_diagram') {
     return success(createClassDiagram(body.code || '', {
       diagramId: body.diagramId || null,
-      replace: body.replace === true
+      replace: body.replace === true,
+      lineStyle: body.lineStyle || 'direct',
+      lineColor: body.lineColor || null,
+      layoutDirection: body.layoutDirection || 'left-to-right',
+      nodeSpacing: body.nodeSpacing,
+      edgeSpacing: body.edgeSpacing,
+      rankSpacing: body.rankSpacing,
+      relationshipStyles: body.relationshipStyles || []
     }))
+  }
+  if (requestPath === '/move_view') {
+    if (!body || typeof body.id !== 'string' || !body.id.trim()) {
+      throw new Error('A valid view id is required.')
+    }
+
+    const viewId = body.id.trim()
+    const view = findViewWorldwide(viewId)
+
+    if (!view) {
+      throw new Error(
+        `View with id ${viewId} was not found.`
+      )
+    }
+
+    // dx/dy are accepted for compatibility with older MCP registrations.
+    const x = validateCoordinate(body.x !== undefined ? body.x : body.dx, 'x')
+    const y = validateCoordinate(body.y !== undefined ? body.y : body.dy, 'y')
+
+    moveViewTo(view, x, y)
+
+    return success({
+      id: view._id,
+      x: view.left,
+      y: view.top,
+      width: view.width,
+      height: view.height
+    })
   }
   return failure('Unknown endpoint: ' + requestPath)
 }
@@ -693,6 +853,7 @@ function startServer () {
       currentPort = message.port
       child.mcpResponseDir = message.responseDir
       child.mcpDiagnosticLog = message.diagnosticLog
+      startRequestMailboxPolling(child)
       bridgeTrace(
         child,
         'SIDECAR_READY_RECEIVED',
@@ -807,6 +968,10 @@ function startServer () {
       ', signal=' + signal + ')'
     )
     if (server === child) {
+      if (child.mcpRequestPollTimer) {
+        clearInterval(child.mcpRequestPollTimer)
+        child.mcpRequestPollTimer = null
+      }
       server = null
       currentPort = null
       restoreBackgroundBehavior()
@@ -821,6 +986,10 @@ function stopServer () {
   const child = server
   bridgeTrace(child, 'STOP_REQUESTED', '')
   child.mcpStopping = true
+  if (child.mcpRequestPollTimer) {
+    clearInterval(child.mcpRequestPollTimer)
+    child.mcpRequestPollTimer = null
+  }
   server = null
   currentPort = null
   restoreBackgroundBehavior()
@@ -859,8 +1028,12 @@ function init () {
   app.commands.register('mcp-toggle-edit', ToggleEdit)
   app.commands.register('mcp-bridge-v4:stop', stopServer)
   app.commands.register('mcp-bridge-v4:status', showStatus)
+  startServer()
 }
 
 exports.init = init
 exports._parseClassDiagram = parseClassDiagram
 exports._memberName = memberName
+exports._lineStyleValue = lineStyleValue
+exports._layoutDirectionValue = layoutDirectionValue
+exports._findRelationshipStyle = findRelationshipStyle

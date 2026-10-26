@@ -24,6 +24,15 @@ let nextRequestId = 0
 let shuttingDown = false
 const pending = new Map()
 
+function removeRequestFiles (id) {
+  const dataPath = path.join(RESPONSE_DIR, id + '.request.data')
+  const readyPath = path.join(RESPONSE_DIR, id + '.request.ready')
+  try {
+    if (fs.existsSync(readyPath)) fs.unlinkSync(readyPath)
+    if (fs.existsSync(dataPath)) fs.unlinkSync(dataPath)
+  } catch (error) {}
+}
+
 function trace (event, details) {
   const line = new Date().toISOString() +
     ' [sidecar pid=' + process.pid + '] ' + event +
@@ -130,6 +139,7 @@ const httpServer = http.createServer(function (req, res) {
       const entry = pending.get(id)
       if (!entry) return
       pending.delete(id)
+      removeRequestFiles(id)
       trace('REQUEST_TIMEOUT', 'id=' + id)
       sendJson(
         entry.res,
@@ -146,6 +156,7 @@ const httpServer = http.createServer(function (req, res) {
       const entry = pending.get(id)
       if (entry) clearTimeout(entry.timeout)
       pending.delete(id)
+      removeRequestFiles(id)
     })
 
     const requestMessage = {
@@ -155,21 +166,23 @@ const httpServer = http.createServer(function (req, res) {
       body: body
     }
 
-    trace('IPC_REQUEST_SEND_START', 'id=' + id + ' path=' + requestMessage.path)
-    if (!sendToParent(requestMessage, function () {
-      const entry = pending.get(id)
-      if (!entry) return
-      clearTimeout(entry.timeout)
-      pending.delete(id)
-      trace('IPC_REQUEST_SEND_FAILED', 'id=' + id)
-      sendJson(entry.res, 503, failure('Could not send the request to StarUML.'))
-    })) {
+    const requestDataPath = path.join(RESPONSE_DIR, id + '.request.data')
+    const requestReadyPath = path.join(RESPONSE_DIR, id + '.request.ready')
+
+    try {
+      trace('REQUEST_MAILBOX_WRITE_START', 'id=' + id + ' path=' + requestDataPath)
+      fs.writeFileSync(requestDataPath, JSON.stringify(requestMessage), 'utf8')
+      fs.writeFileSync(requestReadyPath, '', 'utf8')
+      trace('REQUEST_MAILBOX_WRITE_DONE', 'id=' + id)
+    } catch (error) {
       clearTimeout(timeout)
       pending.delete(id)
-      trace('IPC_REQUEST_SEND_REJECTED', 'id=' + id)
+      removeRequestFiles(id)
+      trace(
+        'REQUEST_MAILBOX_WRITE_FAILED',
+        'id=' + id + ' error=' + (error.stack || error.message || error)
+      )
       sendJson(res, 503, failure('Could not send the request to StarUML.'))
-    } else {
-      trace('IPC_REQUEST_SEND_QUEUED', 'id=' + id)
     }
   })
 })

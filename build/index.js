@@ -8,6 +8,26 @@ import { api } from "./utils.js";
 import packageJson from "../package.json" with { type: "json" };
 const NAME = "staruml-mcp-server";
 const VERSION = packageJson.version;
+const lineStyleSchema = z.enum([
+    "direct",
+    "rectilinear",
+    "oblique",
+    "roundrect",
+    "curve",
+]);
+const layoutDirectionSchema = z.enum([
+    "left-to-right",
+    "right-to-left",
+    "top-to-bottom",
+    "bottom-to-top",
+]);
+const relationshipStyleSchema = z.object({
+    name: z.string().min(1).optional().describe("Relationship name to match."),
+    source: z.string().min(1).optional().describe("Source class name to match."),
+    target: z.string().min(1).optional().describe("Target class name to match."),
+    lineStyle: lineStyleSchema.optional(),
+    lineColor: z.string().min(1).optional().describe("CSS line color, such as #2563eb."),
+}).refine((style) => Boolean(style.name || (style.source && style.target)), { message: "Provide name, or both source and target, to select a relationship." });
 // port number for the StarUML's API server (default: 58321)
 let apiPort = 58321;
 // command line argument parsing
@@ -31,6 +51,34 @@ const server = new McpServer({
     name: NAME,
     version: VERSION,
 });
+server.tool("move_view", "Moves a view to a set of coordinates.", {
+    id: z
+        .string()
+        .describe("The id of the view."),
+    x: z
+        .number()
+        .finite()
+        .min(-100000)
+        .max(100000)
+        .describe("Absolute horizontal position in diagram pixels."),
+    y: z
+        .number()
+        .finite()
+        .min(-100000)
+        .max(100000)
+        .describe("Absolute vertical position in diagram pixels."),
+}, async ({ id, x, y }) => {
+    try {
+        const result = await api(apiPort, "/move_view", {
+            id, x, y
+        });
+        return response.text(`View moved: ${JSON.stringify(result)}`);
+    }
+    catch (error) {
+        console.error(error);
+        return response.error(JsonRpcErrorCode.InternalError, `Failed to move view ${error instanceof Error ? error.message : String(error)}`);
+    }
+});
 server.tool("generate_diagram", "Create a new diagram or replace an existing generated diagram.", {
     code: z
         .string()
@@ -45,12 +93,40 @@ server.tool("generate_diagram", "Create a new diagram or replace an existing gen
         .optional()
         .default(false)
         .describe("Must be true when diagramId is provided, to confirm replacement."),
-}, async ({ code, diagramId, replace }) => {
+    lineStyle: lineStyleSchema
+        .optional()
+        .default("direct")
+        .describe("Default connector routing. 'direct' is one straight segment; 'rectilinear' uses square 90-degree bends."),
+    lineColor: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Default CSS connector color, such as #334155."),
+    layoutDirection: layoutDirectionSchema
+        .optional()
+        .default("left-to-right")
+        .describe("Direction used by automatic diagram layout."),
+    nodeSpacing: z.number().int().min(10).max(500).optional().default(30),
+    edgeSpacing: z.number().int().min(5).max(500).optional().default(20),
+    rankSpacing: z.number().int().min(20).max(1000).optional().default(120),
+    relationshipStyles: z
+        .array(relationshipStyleSchema)
+        .max(100)
+        .optional()
+        .describe("Per-relationship overrides, selected by relationship name or by source and target class names."),
+}, async ({ code, diagramId, replace, lineStyle, lineColor, layoutDirection, nodeSpacing, edgeSpacing, rankSpacing, relationshipStyles, }) => {
     try {
         const result = await api(apiPort, "/generate_diagram", {
             code,
             diagramId,
             replace,
+            lineStyle,
+            lineColor,
+            layoutDirection,
+            nodeSpacing,
+            edgeSpacing,
+            rankSpacing,
+            relationshipStyles,
         });
         return response.text(`Diagram generated: ${JSON.stringify(result)}`);
     }

@@ -60,6 +60,25 @@ assert.strictEqual(spaced.classes[0].attributes[0], 'group name: string NNA')
 assert.strictEqual(spaced.relations[0].left, 'User Group')
 
 assert.strictEqual(bridge._memberName('userId: int PK'), 'userId: int PK')
+assert.strictEqual(bridge._lineStyleValue(), 4)
+assert.strictEqual(bridge._lineStyleValue('direct'), 4)
+assert.strictEqual(bridge._lineStyleValue('rectilinear'), 0)
+assert.strictEqual(bridge._lineStyleValue('curve'), 3)
+assert.strictEqual(bridge._layoutDirectionValue('top-to-bottom'), 'TB')
+assert.deepStrictEqual(
+  bridge._findRelationshipStyle(
+    { name: 'R1', left: 'User', right: 'Group' },
+    [
+      { source: 'Other', target: 'Thing', lineStyle: 'curve' },
+      { name: 'R1', lineStyle: 'direct' }
+    ]
+  ),
+  { name: 'R1', lineStyle: 'direct' }
+)
+
+assert.throws(function () {
+  bridge._lineStyleValue('wobbly')
+}, /Unsupported line style/)
 
 assert.throws(function () {
   bridge._parseClassDiagram([
