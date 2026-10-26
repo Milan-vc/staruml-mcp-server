@@ -1,16 +1,3 @@
-[![smithery badge](https://smithery.ai/badge/@staruml/staruml-mcp-server)](https://smithery.ai/server/@staruml/staruml-mcp-server)
-
-# StarUML MCP Server
-
-[StarUML](https://staruml.io) is a sophisticated modeler for agile and concise modeling. **StarUML MCP Server** enables you to create diagrams or generate codes from diagrams in StarUML via prompts.
-
-## Setup
-
-Prerequisite for the upstream StarUML API:
-
-- [StarUML](https://staruml.io/) `v7.0.0` or higher
-- [Node.js](https://nodejs.org/) `v22` or higher
-
 ### Windows installer (Codex + StarUML 4)
 
 From PowerShell or Command Prompt in this repository, run:
@@ -113,11 +100,6 @@ Use `direct` for a straight line without bends. Use `rectilinear` for square,
 
 `staruml-v4-extension/jsconfig.json` loads generated declarations for the
 complete public API documented in the
-[StarUML 7 API reference](https://files.staruml.io/api-docs/7.0.0/api/index.html).
-The declarations cover the global `app` and `type` objects, 49 documented
-classes, their constants, properties, methods, and events. JavaScript checking
-remains disabled, so IntelliSense works without turning legacy extension code
-into implicit-`any` errors.
 
 Regenerate the declarations from the official reference with:
 
